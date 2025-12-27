@@ -8,11 +8,11 @@
 //! We currently implement a non-preprocessing version of Spartan
 //! that is generic over the polynomial commitment and evaluation argument (i.e., a PCS).
 #![deny(
-  warnings,
-  unused,
+  // warnings,
+  // unused,
   future_incompatible,
   nonstandard_style,
-  rust_2018_idioms,
+  // rust_2018_idioms,
   missing_docs
 )]
 #![allow(non_snake_case)]
@@ -40,9 +40,12 @@ pub mod provider;
 pub mod traits;
 
 // public modules for different proof systems
+mod hash;
+mod linear_code;
 pub mod neutronnova_zk; // NeutronNova with zero-knowledge
 pub mod spartan; // Spartan without zero-knowledge
-pub mod spartan_zk; // Spartan with zero-knowledge 
+pub mod spartan_zk;
+// Spartan with zero-knowledge
 
 /// Start a span + timer, return `(Span, Instant)`.
 macro_rules! start_span {

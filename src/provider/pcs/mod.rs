@@ -10,4 +10,5 @@
 pub mod ipa;
 
 // implementations of polynomial commitment schemes
+mod brakedown;
 pub mod hyrax_pc;
