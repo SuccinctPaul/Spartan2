@@ -1,3 +1,7 @@
+//! Most part are ported from https://github.com/conroi/lcpc and
+//! https://github.com/han0110/plonkish.git.
+//!
+//! [GLSTW21]: https://eprint.iacr.org/2021/1043.pdf
 use crate::{
   errors::SpartanError,
   hash::{Hash, Output},

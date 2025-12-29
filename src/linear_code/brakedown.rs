@@ -1,6 +1,6 @@
 //! Implementation of linear codes specification described in [GLSTW21].
-//! Most part are ported from https://github.com/conroi/lcpc with naming
-//! modification to follow the notations in paper.
+//! Most part are ported from https://github.com/conroi/lcpc and
+//! https://github.com/han0110/plonkish.git.
 //!
 //! [GLSTW21]: https://eprint.iacr.org/2021/1043.pdf
 
