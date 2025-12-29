@@ -6,8 +6,6 @@ pub use sha3::{
 };
 use std::fmt::Debug;
 
-pub use poseidon::{self, Poseidon};
-
 pub trait Hash:
   'static + Sized + Clone + Debug + FixedOutputReset + Default + Update + HashMarker
 {

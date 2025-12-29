@@ -340,3 +340,73 @@ fn h(p: f64) -> f64 {
 fn ceil(v: f64) -> usize {
   v.ceil() as usize
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::provider::pasta::pallas;
+  use rand_core::OsRng;
+
+  type F = pallas::Scalar;
+
+  #[test]
+  fn test_brakedown_encode() {
+    let num_vars = 10;
+    let n_0 = 20;
+    let mut rng = OsRng;
+    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownSpec6>(num_vars, n_0, &mut rng);
+
+    let row_len = brakedown.row_len();
+    let codeword_len = brakedown.codeword_len();
+
+    let data = (0..row_len)
+      .map(|_| F::random(&mut rng))
+      .collect::<Vec<_>>();
+    let mut codeword = vec![F::ZERO; codeword_len];
+    codeword[..row_len].copy_from_slice(&data);
+
+    brakedown.encode(&mut codeword);
+
+    // Systematic code check: data is preserved in the first part of codeword
+    assert_eq!(&codeword[..row_len], &data);
+  }
+
+  #[test]
+  fn test_brakedown_linearity() {
+    let num_vars = 8;
+    let n_0 = 20;
+    let mut rng = OsRng;
+    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownSpec6>(num_vars, n_0, &mut rng);
+
+    let row_len = brakedown.row_len();
+    let codeword_len = brakedown.codeword_len();
+
+    let a = (0..row_len)
+      .map(|_| F::random(&mut rng))
+      .collect::<Vec<_>>();
+    let b = (0..row_len)
+      .map(|_| F::random(&mut rng))
+      .collect::<Vec<_>>();
+    let alpha = F::random(&mut rng);
+
+    let mut codeword_a = vec![F::ZERO; codeword_len];
+    codeword_a[..row_len].copy_from_slice(&a);
+    brakedown.encode(&mut codeword_a);
+
+    let mut codeword_b = vec![F::ZERO; codeword_len];
+    codeword_b[..row_len].copy_from_slice(&b);
+    brakedown.encode(&mut codeword_b);
+
+    let mut ab = a.clone();
+    for i in 0..row_len {
+      ab[i] = a[i] * alpha + b[i];
+    }
+    let mut codeword_ab = vec![F::ZERO; codeword_len];
+    codeword_ab[..row_len].copy_from_slice(&ab);
+    brakedown.encode(&mut codeword_ab);
+
+    for i in 0..codeword_len {
+      assert_eq!(codeword_ab[i], codeword_a[i] * alpha + codeword_b[i]);
+    }
+  }
+}
