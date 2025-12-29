@@ -21,7 +21,8 @@ use bellpepper_core::{
 use ff::{Field, PrimeField, PrimeFieldBits};
 use sha2::{Digest, Sha256};
 use spartan2::{
-  provider::T256HyraxEngine,
+  //   provider::T256HyraxEngine,
+  provider::PallasBrakedownEngine,
   spartan::SpartanSNARK,
   traits::{Engine, circuit::SpartanCircuit, snark::R1CSSNARKTrait},
 };
@@ -29,7 +30,8 @@ use std::{marker::PhantomData, time::Instant};
 use tracing::{info, info_span};
 use tracing_subscriber::EnvFilter;
 
-type E = T256HyraxEngine;
+// type E = T256HyraxEngine;
+type E = PallasBrakedownEngine;
 
 #[derive(Clone, Debug)]
 struct Sha256Circuit<Scalar: PrimeField> {
