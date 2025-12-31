@@ -89,6 +89,12 @@ impl<F: PrimeField> LinearCodes<F> for Brakedown<F> {
     let target = target.as_mut();
     assert_eq!(target.len(), self.codeword_len);
 
+    if self.a.is_empty() {
+      let (input, output) = target.split_at_mut(self.row_len);
+      reed_solomon_into(input, output);
+      return;
+    }
+
     let mut input_offset = 0;
     self.a[..self.a.len() - 1].iter().for_each(|a| {
       let (input, output) = target[input_offset..].split_at_mut(a.dimension.n);
@@ -188,11 +194,14 @@ pub trait BrakedownSpec: Debug {
   ) -> (Vec<SparseMatrixDimension>, Vec<SparseMatrixDimension>) {
     assert!(n > n_0);
 
-    let a = iter::successors(Some(n), |n| Some(ceil(*n as f64 * Self::ALPHA)))
-      .tuple_windows()
-      .map(|(n, m)| SparseMatrixDimension::new(n, m, min(Self::c_n(n), m)))
-      .take_while(|a| a.n > n_0)
-      .collect_vec();
+    let a = iter::successors(Some(n), |n| {
+      let m = ceil(*n as f64 * Self::ALPHA);
+      if m < *n { Some(m) } else { None }
+    })
+    .tuple_windows()
+    .map(|(n, m)| SparseMatrixDimension::new(n, m, min(Self::c_n(n), m)))
+    .take_while(|a| a.n > n_0)
+    .collect_vec();
     let b = a
       .iter()
       .map(|a| {
@@ -207,6 +216,9 @@ pub trait BrakedownSpec: Debug {
 
   fn codeword_len(log2_q: usize, n: usize, n_0: usize) -> usize {
     let (a, b) = Self::dimensions(log2_q, n, n_0);
+    if a.is_empty() {
+      return ceil(n as f64 * Self::R);
+    }
     chain![
       [a[0].n],
       a[..a.len() - 1].iter().map(|a| a.m),
