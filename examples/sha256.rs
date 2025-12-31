@@ -21,8 +21,7 @@ use bellpepper_core::{
 use ff::{Field, PrimeField, PrimeFieldBits};
 use sha2::{Digest, Sha256};
 use spartan2::{
-  //   provider::T256HyraxEngine,
-  provider::PallasBrakedownEngine,
+  provider::T256HyraxEngine,
   spartan::SpartanSNARK,
   traits::{Engine, circuit::SpartanCircuit, snark::R1CSSNARKTrait},
 };
@@ -30,8 +29,7 @@ use std::{marker::PhantomData, time::Instant};
 use tracing::{info, info_span};
 use tracing_subscriber::EnvFilter;
 
-// type E = T256HyraxEngine;
-type E = PallasBrakedownEngine;
+type E = T256HyraxEngine;
 
 #[derive(Clone, Debug)]
 struct Sha256Circuit<Scalar: PrimeField> {
@@ -162,10 +160,10 @@ impl<E: Engine> SpartanCircuit<E> for Sha256Circuit<E::Scalar> {
 
 fn main() {
   tracing_subscriber::fmt()
-    .with_target(false)
-    .with_ansi(true)                // no bold colour codes
-    .with_env_filter(EnvFilter::from_default_env())
-    .init();
+      .with_target(false)
+      .with_ansi(true)                // no bold colour codes
+      .with_env_filter(EnvFilter::from_default_env())
+      .init();
 
   // Message lengths: 2^10 … 2^11 bytes.
   let circuits: Vec<_> = (10..=11)

@@ -209,4 +209,3 @@ fn main() {
     drop(root_span);
   }
 }
-

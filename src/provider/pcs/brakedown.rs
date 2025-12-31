@@ -146,46 +146,46 @@ where
 
 impl<E: Engine, H, S> PCSEngineTrait<E> for MultilinearBrakedown<E, H, S>
 where
-    E::GE: DlogGroupExt,
+  E::GE: DlogGroupExt,
   E::Scalar: Serialize + DeserializeOwned,
   H: Hash + Send + Sync,
   S: BrakedownSpec + Send + Sync,
 {
-    type CommitmentKey = MultilinearBrakedownParam<E>;
-    type VerifierKey = MultilinearBrakedownParam<E>;
-    type Commitment = MultilinearBrakedownCommitment<E, H>;
-    type Blind = MultilinearBrakedownBlind<E>;
+  type CommitmentKey = MultilinearBrakedownParam<E>;
+  type VerifierKey = MultilinearBrakedownParam<E>;
+  type Commitment = MultilinearBrakedownCommitment<E, H>;
+  type Blind = MultilinearBrakedownBlind<E>;
   type EvaluationArgument = MultilinearBrakedownEvaluationArgument<E, H>;
 
-    fn setup(
+  fn setup(
     _label: &'static [u8],
-        n: usize,
+    n: usize,
     _width: usize,
-    ) -> (Self::CommitmentKey, Self::VerifierKey) {
-        assert!(n.is_power_of_two());
-        let num_vars = n.ilog2() as usize;
+  ) -> (Self::CommitmentKey, Self::VerifierKey) {
+    assert!(n.is_power_of_two());
+    let num_vars = n.ilog2() as usize;
     let mut rng = OsRng;
     let brakedown =
       Brakedown::new_multilinear::<S>(num_vars, 20.min((1 << num_vars) - 1), &mut rng);
 
-        let param = MultilinearBrakedownParam::<E> {
-            num_vars,
-            num_rows: (1 << num_vars) / brakedown.row_len(),
-            brakedown,
-        };
+    let param = MultilinearBrakedownParam::<E> {
+      num_vars,
+      num_rows: (1 << num_vars) / brakedown.row_len(),
+      brakedown,
+    };
     (param.clone(), param)
   }
 
   fn blind(_ck: &Self::CommitmentKey, _n: usize) -> Self::Blind {
     MultilinearBrakedownBlind { blind: vec![] }
-    }
+  }
 
-    fn commit(
-        ck: &Self::CommitmentKey,
-        v: &[E::Scalar],
+  fn commit(
+    ck: &Self::CommitmentKey,
+    v: &[E::Scalar],
     _r: &Self::Blind,
     _is_small: bool,
-    ) -> Result<Self::Commitment, SpartanError> {
+  ) -> Result<Self::Commitment, SpartanError> {
     let n = v.len();
     let expected_n = 1 << ck.num_vars;
     if n > expected_n {
@@ -289,46 +289,46 @@ where
     _width: usize,
   ) -> Result<(), SpartanError> {
     Ok(())
-    }
+  }
 
-    fn rerandomize_commitment(
+  fn rerandomize_commitment(
     _ck: &Self::CommitmentKey,
-        comm: &Self::Commitment,
+    comm: &Self::Commitment,
     _r_old: &Self::Blind,
     _r_new: &Self::Blind,
-    ) -> Result<Self::Commitment, SpartanError> {
+  ) -> Result<Self::Commitment, SpartanError> {
     Ok(comm.clone())
-    }
+  }
 
-    fn combine_commitments(comms: &[Self::Commitment]) -> Result<Self::Commitment, SpartanError> {
+  fn combine_commitments(comms: &[Self::Commitment]) -> Result<Self::Commitment, SpartanError> {
     if comms.is_empty() {
       return Err(SpartanError::InvalidInputLength {
         reason: "combine_commitments: No commitments provided".to_string(),
       });
     }
     Ok(comms[0].clone())
-    }
+  }
 
-    fn combine_blinds(blinds: &[Self::Blind]) -> Result<Self::Blind, SpartanError> {
+  fn combine_blinds(blinds: &[Self::Blind]) -> Result<Self::Blind, SpartanError> {
     if blinds.is_empty() {
       return Err(SpartanError::InvalidInputLength {
         reason: "combine_blinds: No blinds provided".to_string(),
       });
     }
     Ok(MultilinearBrakedownBlind { blind: vec![] })
-    }
+  }
 
-    fn prove(
-        ck: &Self::CommitmentKey,
+  fn prove(
+    ck: &Self::CommitmentKey,
     _ck_eval: &Self::CommitmentKey,
-        transcript: &mut E::TE,
-        comm: &Self::Commitment,
-        poly: &[E::Scalar],
+    transcript: &mut E::TE,
+    comm: &Self::Commitment,
+    poly: &[E::Scalar],
     _blind: &Self::Blind,
-        point: &[E::Scalar],
+    point: &[E::Scalar],
     _comm_eval: &Self::Commitment,
     _blind_eval: &Self::Blind,
-    ) -> Result<Self::EvaluationArgument, SpartanError> {
+  ) -> Result<Self::EvaluationArgument, SpartanError> {
     let n = poly.len();
     let expected_n = 1 << ck.num_vars;
     if n > expected_n {
@@ -421,12 +421,16 @@ where
     let mut columns_proof = Vec::new();
 
     // Re-calculate or use cached rows/hashes
-    let (rows, intermediate_hashes) = if let (Some(rows), Some(hashes)) = (&comm.rows, &comm.intermediate_hashes) {
-      (Cow::Borrowed(rows), Cow::Borrowed(hashes))
-    } else {
-      let comm_re = Self::commit(ck, poly, _blind, false)?;
-      (Cow::Owned(comm_re.rows.unwrap()), Cow::Owned(comm_re.intermediate_hashes.unwrap()))
-    };
+    let (rows, intermediate_hashes) =
+      if let (Some(rows), Some(hashes)) = (&comm.rows, &comm.intermediate_hashes) {
+        (Cow::Borrowed(rows), Cow::Borrowed(hashes))
+      } else {
+        let comm_re = Self::commit(ck, poly, _blind, false)?;
+        (
+          Cow::Owned(comm_re.rows.unwrap()),
+          Cow::Owned(comm_re.intermediate_hashes.unwrap()),
+        )
+      };
 
     for _ in 0..ck.brakedown.num_column_opening() {
       let column = squeeze_challenge_idx::<E>(transcript, codeword_len);
@@ -457,17 +461,17 @@ where
       columns: columns_proof,
       _p: PhantomData,
     })
-    }
+  }
 
-    fn verify(
-        vk: &Self::VerifierKey,
+  fn verify(
+    vk: &Self::VerifierKey,
     _ck_eval: &Self::CommitmentKey,
-        transcript: &mut E::TE,
-        comm: &Self::Commitment,
-        point: &[E::Scalar],
-        comm_eval: &Self::Commitment,
-        arg: &Self::EvaluationArgument,
-    ) -> Result<(), SpartanError> {
+    transcript: &mut E::TE,
+    comm: &Self::Commitment,
+    point: &[E::Scalar],
+    comm_eval: &Self::Commitment,
+    arg: &Self::EvaluationArgument,
+  ) -> Result<(), SpartanError> {
     if point.len() != vk.num_vars {
       return Err(SpartanError::InvalidInputLength {
         reason: format!(
