@@ -32,7 +32,7 @@ pub struct Brakedown<F> {
 }
 
 impl<F: PrimeField> Brakedown<F> {
-  pub fn proof_size<S: BrakedownSpec>(n_0: usize, c: usize, r: usize) -> usize {
+  pub fn proof_size<S: BrakedownCodeSpec>(n_0: usize, c: usize, r: usize) -> usize {
     let log2_q = F::NUM_BITS as usize;
     let num_ldt = S::num_proximity_testing(log2_q, c, n_0);
     let num_openings = S::num_column_opening();
@@ -45,7 +45,11 @@ impl<F: PrimeField> Brakedown<F> {
     (1 + num_ldt) * c + num_openings * (r + merkle_path_len)
   }
 
-  pub fn new_multilinear<S: BrakedownSpec>(num_vars: usize, n_0: usize, rng: impl RngCore) -> Self {
+  pub fn new_multilinear<S: BrakedownCodeSpec>(
+    num_vars: usize,
+    n_0: usize,
+    rng: impl RngCore,
+  ) -> Self {
     assert!(1 << num_vars > n_0);
 
     let log2_q = F::NUM_BITS as usize;
@@ -145,7 +149,7 @@ impl<F: PrimeField> LinearCodes<F> for Brakedown<F> {
   }
 }
 
-pub trait BrakedownSpec: Debug {
+pub trait BrakedownCodeSpec: Debug {
   const LAMBDA: f64;
   const ALPHA: f64;
   const BETA: f64;
@@ -266,7 +270,7 @@ macro_rules! impl_spec_128 {
             #[allow(dead_code)]
             #[derive(Debug)]
             pub struct $name;
-            impl BrakedownSpec for $name {
+            impl BrakedownCodeSpec for $name {
                 const LAMBDA: f64 = 128.0;
                 const ALPHA: f64 = $alpha;
                 const BETA: f64 = $beta;
@@ -278,12 +282,12 @@ macro_rules! impl_spec_128 {
 
 // Figure 2 in [GLSTW21](https://eprint.iacr.org/2021/1043.pdf).
 impl_spec_128!(
-  (BrakedownSpec1, 0.1195, 0.0284, 1.420),
-  (BrakedownSpec2, 0.1380, 0.0444, 1.470),
-  (BrakedownSpec3, 0.1780, 0.0610, 1.521),
-  (BrakedownSpec4, 0.2000, 0.0820, 1.640),
-  (BrakedownSpec5, 0.2110, 0.0970, 1.616),
-  (BrakedownSpec6, 0.2380, 0.1205, 1.720)
+  (BrakedownCodeSpec1, 0.1195, 0.0284, 1.420),
+  (BrakedownCodeSpec2, 0.1380, 0.0444, 1.470),
+  (BrakedownCodeSpec3, 0.1780, 0.0610, 1.521),
+  (BrakedownCodeSpec4, 0.2000, 0.0820, 1.640),
+  (BrakedownCodeSpec5, 0.2110, 0.0970, 1.616),
+  (BrakedownCodeSpec6, 0.2380, 0.1205, 1.720)
 );
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -380,7 +384,7 @@ mod tests {
     let num_vars = 10;
     let n_0 = 20;
     let mut rng = OsRng;
-    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownSpec6>(num_vars, n_0, &mut rng);
+    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
 
     let row_len = brakedown.row_len();
     let codeword_len = brakedown.codeword_len();
@@ -402,7 +406,7 @@ mod tests {
     let num_vars = 8;
     let n_0 = 20;
     let mut rng = OsRng;
-    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownSpec6>(num_vars, n_0, &mut rng);
+    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
 
     let row_len = brakedown.row_len();
     let codeword_len = brakedown.codeword_len();

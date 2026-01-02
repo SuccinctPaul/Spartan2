@@ -17,7 +17,7 @@ mod msm;
 
 use crate::{
   hash::Keccak256,
-  linear_code::brakedown::BrakedownSpec6,
+  linear_code::brakedown::BrakedownCodeSpec6,
   provider::{
     keccak::Keccak256Transcript,
     pasta::{pallas, vesta},
@@ -90,7 +90,7 @@ impl Engine for PallasBrakedownEngine {
   type Scalar = pallas::Scalar;
   type GE = pallas::Point;
   type TE = Keccak256Transcript<Self>;
-  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownSpec6>;
+  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
 }
 
 impl Engine for VestaBrakedownEngine {
@@ -98,5 +98,5 @@ impl Engine for VestaBrakedownEngine {
   type Scalar = vesta::Scalar;
   type GE = vesta::Point;
   type TE = Keccak256Transcript<Self>;
-  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownSpec6>;
+  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
 }

@@ -7,7 +7,7 @@ use crate::{
   hash::{Hash, Output},
   linear_code::{
     LinearCodes,
-    brakedown::{Brakedown, BrakedownSpec},
+    brakedown::{Brakedown, BrakedownCodeSpec},
   },
   polys::eq::EqPolynomial,
   provider::{pcs::ipa::inner_product, traits::DlogGroupExt},
@@ -131,13 +131,13 @@ pub struct MultilinearBrakedownEvaluationArgument<E: Engine, H: Hash> {
 
 /// Brakedown polynomial commitment scheme
 #[derive(Debug)]
-pub struct MultilinearBrakedown<E: Engine, H: Hash, S: BrakedownSpec>(PhantomData<(E, H, S)>);
+pub struct MultilinearBrakedown<E: Engine, H: Hash, S: BrakedownCodeSpec>(PhantomData<(E, H, S)>);
 
 impl<E: Engine, H, S> Clone for MultilinearBrakedown<E, H, S>
 where
   E::GE: DlogGroupExt,
   H: Hash + Send + Sync,
-  S: BrakedownSpec + Send + Sync,
+  S: BrakedownCodeSpec + Send + Sync,
 {
   fn clone(&self) -> Self {
     Self(PhantomData)
@@ -149,7 +149,7 @@ where
   E::GE: DlogGroupExt,
   E::Scalar: Serialize + DeserializeOwned,
   H: Hash + Send + Sync,
-  S: BrakedownSpec + Send + Sync,
+  S: BrakedownCodeSpec + Send + Sync,
 {
   type CommitmentKey = MultilinearBrakedownParam<E>;
   type VerifierKey = MultilinearBrakedownParam<E>;
@@ -661,7 +661,7 @@ mod tests {
   use super::*;
   use crate::{
     hash::Keccak256,
-    linear_code::brakedown::BrakedownSpec6,
+    linear_code::brakedown::BrakedownCodeSpec6,
     provider::{keccak::Keccak256Transcript, pasta::pallas},
   };
 
@@ -673,12 +673,12 @@ mod tests {
     type Scalar = pallas::Scalar;
     type GE = pallas::Point;
     type TE = Keccak256Transcript<Self>;
-    type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownSpec6>;
+    type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
   }
 
   type E = PallasBrakedownEngine;
   type H = Keccak256;
-  type S = BrakedownSpec6;
+  type S = BrakedownCodeSpec6;
   type PCS = MultilinearBrakedown<E, H, S>;
 
   #[test]
