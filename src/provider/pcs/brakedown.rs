@@ -7,7 +7,7 @@ use crate::{
   hash::{Hash, Output},
   linear_code::{
     LinearCodes,
-    brakedown::{Brakedown, BrakedownCodeSpec},
+    brakedown::{BrakedownCode, BrakedownCodeSpec},
   },
   polys::eq::EqPolynomial,
   provider::{pcs::ipa::inner_product, traits::DlogGroupExt},
@@ -37,7 +37,7 @@ pub struct MultilinearBrakedownParam<E: Engine> {
   /// Number of rows in the matrix
   pub num_rows: usize,
   /// Brakedown linear code specification
-  pub code: Brakedown<E::Scalar>,
+  pub code: BrakedownCode<E::Scalar>,
 }
 
 /// Commitment for Brakedown polynomial commitment scheme
@@ -166,7 +166,7 @@ where
     let num_vars = n.ilog2() as usize;
     let mut rng = OsRng;
     let brakedown =
-      Brakedown::new_multilinear::<S>(num_vars, 20.min((1 << num_vars) - 1), &mut rng);
+      BrakedownCode::new_multilinear::<S>(num_vars, 20.min((1 << num_vars) - 1), &mut rng);
 
     let param = MultilinearBrakedownParam::<E> {
       num_vars,

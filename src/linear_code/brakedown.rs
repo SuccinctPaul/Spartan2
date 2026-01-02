@@ -384,7 +384,8 @@ mod tests {
     let num_vars = 10;
     let n_0 = 20;
     let mut rng = OsRng;
-    let brakedown = BrakedownCode::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
+    let brakedown =
+      BrakedownCode::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
 
     let row_len = brakedown.row_len();
     let codeword_len = brakedown.codeword_len();
@@ -406,7 +407,8 @@ mod tests {
     let num_vars = 8;
     let n_0 = 20;
     let mut rng = OsRng;
-    let brakedown = BrakedownCode::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
+    let brakedown =
+      BrakedownCode::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
 
     let row_len = brakedown.row_len();
     let codeword_len = brakedown.codeword_len();
