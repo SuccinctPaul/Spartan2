@@ -35,21 +35,34 @@ impl<F: PrimeField> Brakedown<F> {
   pub fn proof_size<S: BrakedownSpec>(n_0: usize, c: usize, r: usize) -> usize {
     let log2_q = F::NUM_BITS as usize;
     let num_ldt = S::num_proximity_testing(log2_q, c, n_0);
-    (1 + num_ldt) * c + S::num_column_opening() * r
+    let num_openings = S::num_column_opening();
+    let codeword_len = S::codeword_len(log2_q, c, n_0);
+    let merkle_path_len = codeword_len.next_power_of_two().ilog2() as usize;
+
+    // Estimate total number of field elements and hashes in the proof
+    // (1 + num_ldt) * c: Elements from combined rows
+    // num_openings * (r + merkle_path_len): Elements from column openings + Merkle paths
+    (1 + num_ldt) * c + num_openings * (r + merkle_path_len)
   }
 
   pub fn new_multilinear<S: BrakedownSpec>(num_vars: usize, n_0: usize, rng: impl RngCore) -> Self {
     assert!(1 << num_vars > n_0);
 
     let log2_q = F::NUM_BITS as usize;
-    let min_log2_n = (n_0 + 1).next_power_of_two().ilog2() as usize;
+    let min_log2_c = (n_0 + 1).next_power_of_two().ilog2() as usize;
+
+    // Search for the best row_len (c) and num_rows (r)
+    // Following BrakingBase [NST24]'s suggestion: set r = O(log n)
+    // The current loop naturally favors larger c (smaller r) due to the large weight of num_openings.
     let (_, row_len) =
-      (min_log2_n..=num_vars).fold((usize::MAX, 0), |(min_proof_size, row_len), log2_n| {
-        let proof_size = Self::proof_size::<S>(n_0, 1 << log2_n, 1 << (num_vars - log2_n));
-        if proof_size < min_proof_size {
-          (proof_size, 1 << log2_n)
+      (min_log2_c..=num_vars).fold((usize::MAX, 0), |(min_proof_size, best_c), log2_c| {
+        let c = 1 << log2_c;
+        let r = 1 << (num_vars - log2_c);
+        let proof_size = Self::proof_size::<S>(n_0, c, r);
+        if proof_size <= min_proof_size {
+          (proof_size, c)
         } else {
-          (min_proof_size, row_len)
+          (min_proof_size, best_c)
         }
       });
     let codeword_len = S::codeword_len(log2_q, row_len, n_0);
