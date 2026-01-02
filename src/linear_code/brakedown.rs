@@ -22,7 +22,7 @@ use std::{
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Brakedown<F> {
+pub struct BrakedownCode<F> {
   row_len: usize,
   codeword_len: usize,
   num_column_opening: usize,
@@ -31,7 +31,7 @@ pub struct Brakedown<F> {
   b: Vec<SparseMatrix<F>>,
 }
 
-impl<F: PrimeField> Brakedown<F> {
+impl<F: PrimeField> BrakedownCode<F> {
   pub fn proof_size<S: BrakedownCodeSpec>(n_0: usize, c: usize, r: usize) -> usize {
     let log2_q = F::NUM_BITS as usize;
     let num_ldt = S::num_proximity_testing(log2_q, c, n_0);
@@ -85,7 +85,7 @@ impl<F: PrimeField> Brakedown<F> {
   }
 }
 
-impl<F: PrimeField> LinearCodes<F> for Brakedown<F> {
+impl<F: PrimeField> LinearCodes<F> for BrakedownCode<F> {
   fn row_len(&self) -> usize {
     self.row_len
   }
@@ -384,7 +384,7 @@ mod tests {
     let num_vars = 10;
     let n_0 = 20;
     let mut rng = OsRng;
-    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
+    let brakedown = BrakedownCode::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
 
     let row_len = brakedown.row_len();
     let codeword_len = brakedown.codeword_len();
@@ -406,7 +406,7 @@ mod tests {
     let num_vars = 8;
     let n_0 = 20;
     let mut rng = OsRng;
-    let brakedown = Brakedown::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
+    let brakedown = BrakedownCode::<F>::new_multilinear::<BrakedownCodeSpec6>(num_vars, n_0, &mut rng);
 
     let row_len = brakedown.row_len();
     let codeword_len = brakedown.codeword_len();
