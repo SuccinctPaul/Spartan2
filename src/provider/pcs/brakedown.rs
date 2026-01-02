@@ -370,49 +370,50 @@ where
       inner_product(poly, &chis)
     };
 
-    // Prove proximity
     let (t_0, t_1) = point_to_tensor(ck.num_rows, point);
-    let t_0_combined_row = if ck.num_rows > 1 {
-      let combine = |combined_row: &mut [E::Scalar], coeffs: &[E::Scalar]| {
-        combined_row
-          .par_iter_mut()
-          .enumerate()
-          .for_each(|(column, combined)| {
-            *combined = E::Scalar::ZERO;
-            coeffs
-              .iter()
-              .zip(poly.iter().skip(column).step_by(row_len))
-              .for_each(|(coeff, eval)| {
-                *combined += *coeff * *eval;
-              });
-          });
-      };
-      let mut combined_row = vec![E::Scalar::ZERO; row_len];
+    let mut combined_rows_proof = Vec::new();
+
+    // 1. Proximity Testing (Random linear combinations)
+    let combine = |combined_row: &mut [E::Scalar], coeffs: &[E::Scalar]| {
+      combined_row
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(column, combined)| {
+          *combined = E::Scalar::ZERO;
+          coeffs
+            .iter()
+            .zip(poly.iter().skip(column).step_by(row_len))
+            .for_each(|(coeff, eval)| {
+              *combined += *coeff * *eval;
+            });
+        });
+    };
+
+    if ck.num_rows > 1 {
       for _ in 0..ck.brakedown.num_proximity_testing() {
         let coeffs: Vec<E::Scalar> = (0..ck.num_rows)
           .map(|_| transcript.squeeze(b"proximity_challenge"))
           .collect::<Result<Vec<_>, SpartanError>>()?;
+        let mut combined_row = vec![E::Scalar::ZERO; row_len];
         combine(&mut combined_row, &coeffs);
         transcript.absorb(b"combined_row", &combined_row.as_slice());
+        combined_rows_proof.push(combined_row);
       }
-      combine(&mut combined_row, &t_0);
-      Cow::Owned(combined_row)
-    } else {
-      Cow::Borrowed(poly)
-    };
-    transcript.absorb(b"t_0_combined_row", &t_0_combined_row.as_ref());
+    }
+
+    // 2. Evaluation Consistency (Specific linear combination using t_0)
+    let mut t_0_combined_row = vec![E::Scalar::ZERO; row_len];
+    combine(&mut t_0_combined_row, &t_0);
+    transcript.absorb(b"t_0_combined_row", &t_0_combined_row.as_slice());
 
     // Verify consistency locally
-    let computed_eval = inner_product(t_0_combined_row.as_ref(), &t_1);
+    let computed_eval = inner_product(&t_0_combined_row, &t_1);
     if computed_eval != eval {
       return Err(SpartanError::InternalError {
         reason: "Brakedown prove: Consistency check failed".to_string(),
       });
     }
-
-    // Collect proof data for EvaluationArgument
-    let mut combined_rows_proof = Vec::new();
-    combined_rows_proof.push(t_0_combined_row.to_vec());
+    combined_rows_proof.push(t_0_combined_row);
 
     // Open merkle tree
     let depth = codeword_len.next_power_of_two().ilog2() as usize;
@@ -503,33 +504,54 @@ where
     };
 
     let (t_0, t_1) = point_to_tensor(vk.num_rows, point);
+    let mut all_coeffs = Vec::new();
+    let num_proximity = if vk.num_rows > 1 {
+      vk.brakedown.num_proximity_testing()
+    } else {
+      0
+    };
+
+    if arg.combined_rows.len() != num_proximity + 1 {
+      return Err(SpartanError::InvalidPCS {
+        reason: format!(
+          "Brakedown verify: Expected {} combined_rows, got {}",
+          num_proximity + 1,
+          arg.combined_rows.len()
+        ),
+      });
+    }
 
     if vk.num_rows > 1 {
-      // Get challenges from transcript (same order as prover)
-      for _ in 0..vk.brakedown.num_proximity_testing() {
-        let _coeffs: Vec<E::Scalar> = (0..vk.num_rows)
+      // Get proximity challenges from transcript
+      for i in 0..num_proximity {
+        let coeffs: Vec<E::Scalar> = (0..vk.num_rows)
           .map(|_| transcript.squeeze(b"proximity_challenge"))
           .collect::<Result<Vec<_>, SpartanError>>()?;
+        transcript.absorb(b"combined_row", &arg.combined_rows[i].as_slice());
+        all_coeffs.push(coeffs);
       }
     }
 
-    // Get t_0_combined_row from proof
-    if arg.combined_rows.is_empty() {
-      return Err(SpartanError::InvalidPCS {
-        reason: "Missing combined_rows in proof".to_string(),
-      });
-    }
-    let t_0_combined_row = &arg.combined_rows[0];
-    if t_0_combined_row.len() < row_len {
-      return Err(SpartanError::InvalidPCS {
-        reason: "Invalid combined_row length".to_string(),
-      });
-    }
+    // Get evaluation challenge (t_0)
+    transcript.absorb(
+      b"t_0_combined_row",
+      &arg.combined_rows[num_proximity].as_slice(),
+    );
+    all_coeffs.push(t_0);
 
-    // Encode the combined row
-    let mut encoded_row = vec![E::Scalar::ZERO; codeword_len];
-    encoded_row[..row_len].copy_from_slice(&t_0_combined_row[..row_len]);
-    vk.brakedown.encode(&mut encoded_row);
+    // Encode all combined rows
+    let mut encoded_combined_rows = Vec::new();
+    for row in &arg.combined_rows {
+      if row.len() < row_len {
+        return Err(SpartanError::InvalidPCS {
+          reason: "Invalid combined_row length".to_string(),
+        });
+      }
+      let mut encoded = vec![E::Scalar::ZERO; codeword_len];
+      encoded[..row_len].copy_from_slice(&row[..row_len]);
+      vk.brakedown.encode(&mut encoded);
+      encoded_combined_rows.push(encoded);
+    }
 
     // Verify merkle tree openings
     let depth = codeword_len.next_power_of_two().ilog2() as usize;
@@ -560,16 +582,18 @@ where
         });
       }
 
-      // Verify proximity
-      let item = if vk.num_rows > 1 {
-        inner_product(&t_0, items)
-      } else {
-        items[0]
-      };
-      if item != encoded_row[column] {
-        return Err(SpartanError::InvalidPCS {
-          reason: "Proximity failure".to_string(),
-        });
+      // Verify proximity and consistency for all combined rows
+      for (t, coeffs) in all_coeffs.iter().enumerate() {
+        let expected_item = if vk.num_rows > 1 {
+          inner_product(coeffs, items)
+        } else {
+          items[0]
+        };
+        if expected_item != encoded_combined_rows[t][column] {
+          return Err(SpartanError::InvalidPCS {
+            reason: format!("Consistency failure for row {}", t),
+          });
+        }
       }
 
       // Verify merkle tree opening
@@ -598,10 +622,11 @@ where
       }
     }
 
-    // Verify consistency
-    if inner_product(t_0_combined_row, &t_1) != eval {
+    // Finally verify the evaluation itself
+    let final_combined_row = &arg.combined_rows[num_proximity];
+    if inner_product(final_combined_row, &t_1) != eval {
       return Err(SpartanError::InvalidPCS {
-        reason: "Consistency failure".to_string(),
+        reason: "Consistency failure for final evaluation".to_string(),
       });
     }
 
