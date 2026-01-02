@@ -263,6 +263,7 @@ pub trait BrakedownSpec: Debug {
 macro_rules! impl_spec_128 {
     ($(($name:ident, $alpha:literal, $beta:literal, $r:literal)),*) => {
         $(
+            #[allow(dead_code)]
             #[derive(Debug)]
             pub struct $name;
             impl BrakedownSpec for $name {

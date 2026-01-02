@@ -37,7 +37,7 @@ pub struct MultilinearBrakedownParam<E: Engine> {
   /// Number of rows in the matrix
   pub num_rows: usize,
   /// Brakedown linear code specification
-  pub brakedown: Brakedown<E::Scalar>,
+  pub code: Brakedown<E::Scalar>,
 }
 
 /// Commitment for Brakedown polynomial commitment scheme
@@ -171,7 +171,7 @@ where
     let param = MultilinearBrakedownParam::<E> {
       num_vars,
       num_rows: (1 << num_vars) / brakedown.row_len(),
-      brakedown,
+      code: brakedown,
     };
     (param.clone(), param)
   }
@@ -206,8 +206,8 @@ where
       v
     };
 
-    let row_len = ck.brakedown.row_len();
-    let codeword_len = ck.brakedown.codeword_len();
+    let row_len = ck.code.row_len();
+    let codeword_len = ck.code.codeword_len();
     let mut rows = vec![E::Scalar::ZERO; ck.num_rows * codeword_len];
 
     // Encode rows using Brakedown code
@@ -223,7 +223,7 @@ where
           .zip(evals_chunk.chunks_exact(row_len))
         {
           row[..evals.len()].copy_from_slice(evals);
-          ck.brakedown.encode(row);
+          ck.code.encode(row);
         }
       });
 
@@ -361,8 +361,8 @@ where
 
     transcript.absorb(b"poly_com", comm);
 
-    let row_len = ck.brakedown.row_len();
-    let codeword_len = ck.brakedown.codeword_len();
+    let row_len = ck.code.row_len();
+    let codeword_len = ck.code.codeword_len();
 
     // Compute evaluation
     let eval = {
@@ -390,7 +390,7 @@ where
     };
 
     if ck.num_rows > 1 {
-      for _ in 0..ck.brakedown.num_proximity_testing() {
+      for _ in 0..ck.code.num_proximity_testing() {
         let coeffs: Vec<E::Scalar> = (0..ck.num_rows)
           .map(|_| transcript.squeeze(b"proximity_challenge"))
           .collect::<Result<Vec<_>, SpartanError>>()?;
@@ -433,7 +433,7 @@ where
         )
       };
 
-    for _ in 0..ck.brakedown.num_column_opening() {
+    for _ in 0..ck.code.num_column_opening() {
       let column = squeeze_challenge_idx::<E>(transcript, codeword_len);
       columns_proof.push(column);
 
@@ -485,8 +485,8 @@ where
 
     transcript.absorb(b"poly_com", comm);
 
-    let row_len = vk.brakedown.row_len();
-    let codeword_len = vk.brakedown.codeword_len();
+    let row_len = vk.code.row_len();
+    let codeword_len = vk.code.codeword_len();
 
     // The evaluation should be in comm_eval.rows[0]
     let eval = if let Some(rows) = &comm_eval.rows {
@@ -506,7 +506,7 @@ where
     let (t_0, t_1) = point_to_tensor(vk.num_rows, point);
     let mut all_coeffs = Vec::new();
     let num_proximity = if vk.num_rows > 1 {
-      vk.brakedown.num_proximity_testing()
+      vk.code.num_proximity_testing()
     } else {
       0
     };
@@ -549,13 +549,13 @@ where
       }
       let mut encoded = vec![E::Scalar::ZERO; codeword_len];
       encoded[..row_len].copy_from_slice(&row[..row_len]);
-      vk.brakedown.encode(&mut encoded);
+      vk.code.encode(&mut encoded);
       encoded_combined_rows.push(encoded);
     }
 
     // Verify merkle tree openings
     let depth = codeword_len.next_power_of_two().ilog2() as usize;
-    if arg.columns.len() != vk.brakedown.num_column_opening() {
+    if arg.columns.len() != vk.code.num_column_opening() {
       return Err(SpartanError::InvalidPCS {
         reason: "Invalid number of column openings".to_string(),
       });
