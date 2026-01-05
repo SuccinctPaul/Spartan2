@@ -329,7 +329,7 @@ where
     poly: &[E::Scalar],
     _blind: &Self::Blind,
     point: &[E::Scalar],
-    comm_eval: &Self::Commitment,
+    _comm_eval: &Self::Commitment,
     _blind_eval: &Self::Blind,
   ) -> Result<Self::EvaluationArgument, SpartanError> {
     let n = poly.len();
