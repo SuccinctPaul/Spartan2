@@ -116,14 +116,14 @@ pub struct MultilinearBrakedownBlind<E: Engine> {
   deserialize = "E::Scalar: DeserializeOwned"
 ))]
 pub struct MultilinearBrakedownEvaluationArgument<E: Engine, H: Hash> {
-  /// Combined rows proof
+  /// Combined rows proof, eg: F1,F2
   pub combined_rows: Vec<Vec<E::Scalar>>,
-  /// Column items proof
+  /// Column items proof, entries of the corresponding “column” of ˆu, namely ˆu1,j , . . . , uˆm,j
   pub column_items: Vec<Vec<E::Scalar>>,
-  /// Merkle paths proof
+  /// Merkle paths of ˆu1,j , . . . , uˆm,j
   pub merkle_paths: Vec<Vec<Vec<u8>>>,
-  /// Columns proof
-  pub columns: Vec<usize>,
+  /// Columns idx Q,a random set of size ` = Θ(λ)
+  pub columns_idx: Vec<usize>,
   /// Phantom data for hash function
   #[serde(skip)]
   pub _p: PhantomData<fn() -> H>,
@@ -208,16 +208,19 @@ where
 
     let row_len = ck.code.row_len();
     let codeword_len = ck.code.codeword_len();
+    // Define the encode metrics(expressed in vector)
     let mut rows = vec![E::Scalar::ZERO; ck.num_rows * codeword_len];
 
     // Encode rows using Brakedown code
     let num_threads = rayon::current_num_threads();
     let chunk_size = div_ceil(ck.num_rows, num_threads);
+    // Convert the coeffs and encode one into metrics.
     rows
       .chunks_exact_mut(chunk_size * codeword_len)
       .zip(v.chunks_exact(chunk_size * row_len))
       .par_bridge()
       .for_each(|(rows_chunk, evals_chunk)| {
+        // Encode each eval into row.
         for (row, evals) in rows_chunk
           .chunks_exact_mut(codeword_len)
           .zip(evals_chunk.chunks_exact(row_len))
@@ -326,7 +329,7 @@ where
     poly: &[E::Scalar],
     _blind: &Self::Blind,
     point: &[E::Scalar],
-    _comm_eval: &Self::Commitment,
+    comm_eval: &Self::Commitment,
     _blind_eval: &Self::Blind,
   ) -> Result<Self::EvaluationArgument, SpartanError> {
     let n = poly.len();
@@ -369,11 +372,18 @@ where
       let chis = EqPolynomial::evals_from_points(point);
       inner_product(poly, &chis)
     };
+    // if comm_eval. != eval {
+    //   return Err(SpartanError::InternalError {
+    //     reason: "Brakedown prove: comm_eval check failed".to_string(),
+    //   });
+    // }
 
-    let (t_0, t_1) = point_to_tensor(ck.num_rows, point);
+    let (q_1, q_2) = point_to_tensor(ck.num_rows, point);
+    // The F1 and F2
     let mut combined_rows_proof = Vec::new();
 
     // 1. Proximity Testing (Random linear combinations)
+    //    compute u^0 = Σᵢ rᵢ·uᵢ
     let combine = |combined_row: &mut [E::Scalar], coeffs: &[E::Scalar]| {
       combined_row
         .par_iter_mut()
@@ -391,29 +401,32 @@ where
 
     if ck.num_rows > 1 {
       for _ in 0..ck.code.num_proximity_testing() {
-        let coeffs: Vec<E::Scalar> = (0..ck.num_rows)
+        // generate the random $r \in \mathbb{F}^m$
+        let r: Vec<E::Scalar> = (0..ck.num_rows)
           .map(|_| transcript.squeeze(b"proximity_challenge"))
           .collect::<Result<Vec<_>, SpartanError>>()?;
         let mut combined_row = vec![E::Scalar::ZERO; row_len];
-        combine(&mut combined_row, &coeffs);
+        // compute F1(u^0), where $u^0 = \sum r_i u_i$, to ensure $\text{Enc}(u^0)[j] = \sum r_i \hat{u}_i[j]$
+        combine(&mut combined_row, &r);
         transcript.absorb(b"combined_row", &combined_row.as_slice());
         combined_rows_proof.push(combined_row);
       }
     }
 
-    // 2. Evaluation Consistency (Specific linear combination using t_0)
-    let mut t_0_combined_row = vec![E::Scalar::ZERO; row_len];
-    combine(&mut t_0_combined_row, &t_0);
-    transcript.absorb(b"t_0_combined_row", &t_0_combined_row.as_slice());
+    // 2. Evaluation Consistency (Specific linear combination using q_1)
+    //    compute F2(u^00), where $u^{00} = \sum q_{1,i} u_i$, ensure $g(r) = \langle u^{00}, q_2 \rangle$
+    let mut q_1_combined_row = vec![E::Scalar::ZERO; row_len];
+    combine(&mut q_1_combined_row, &q_1);
+    transcript.absorb(b"q_1_combined_row", &q_1_combined_row.as_slice());
 
     // Verify consistency locally
-    let computed_eval = inner_product(&t_0_combined_row, &t_1);
+    let computed_eval = inner_product(&q_1_combined_row, &q_2);
     if computed_eval != eval {
       return Err(SpartanError::InternalError {
         reason: "Brakedown prove: Consistency check failed".to_string(),
       });
     }
-    combined_rows_proof.push(t_0_combined_row);
+    combined_rows_proof.push(q_1_combined_row);
 
     // Open merkle tree
     let depth = codeword_len.next_power_of_two().ilog2() as usize;
@@ -434,21 +447,24 @@ where
       };
 
     for _ in 0..ck.code.num_column_opening() {
-      let column = squeeze_challenge_idx::<E>(transcript, codeword_len);
-      columns_proof.push(column);
+      // generate Q to be a random set of size \ell = Θ(λ) with Q ⊆ [N].
+      let column_idx = squeeze_challenge_idx::<E>(transcript, codeword_len);
+      columns_proof.push(column_idx);
 
-      let column_items: Vec<E::Scalar> = rows
+      // select the idx column from encoded metrics
+      let column: Vec<E::Scalar> = rows
         .iter()
-        .skip(column)
+        .skip(column_idx)
         .step_by(codeword_len)
         .copied()
         .collect();
-      column_items_proof.push(column_items);
+      column_items_proof.push(column);
 
+      // opening merkle commit with specific column
       let mut path = Vec::new();
       let mut offset = 0;
       for (idx, width) in (1..=depth).rev().map(|d| 1 << d).enumerate() {
-        let neighbor_idx = (column >> idx) ^ 1;
+        let neighbor_idx = (column_idx >> idx) ^ 1;
         path.push(intermediate_hashes[offset + neighbor_idx].clone());
         offset += width;
       }
@@ -459,7 +475,7 @@ where
       combined_rows: combined_rows_proof,
       column_items: column_items_proof,
       merkle_paths: merkle_paths_proof,
-      columns: columns_proof,
+      columns_idx: columns_proof,
       _p: PhantomData,
     })
   }
@@ -503,7 +519,7 @@ where
       });
     };
 
-    let (t_0, t_1) = point_to_tensor(vk.num_rows, point);
+    let (q_1, q_2) = point_to_tensor(vk.num_rows, point);
     let mut all_coeffs = Vec::new();
     let num_proximity = if vk.num_rows > 1 {
       vk.code.num_proximity_testing()
@@ -532,12 +548,12 @@ where
       }
     }
 
-    // Get evaluation challenge (t_0)
+    // Get evaluation challenge (q_1)
     transcript.absorb(
-      b"t_0_combined_row",
+      b"q_1_combined_row",
       &arg.combined_rows[num_proximity].as_slice(),
     );
-    all_coeffs.push(t_0);
+    all_coeffs.push(q_1);
 
     // Encode all combined rows
     let mut encoded_combined_rows = Vec::new();
@@ -555,13 +571,13 @@ where
 
     // Verify merkle tree openings
     let depth = codeword_len.next_power_of_two().ilog2() as usize;
-    if arg.columns.len() != vk.code.num_column_opening() {
+    if arg.columns_idx.len() != vk.code.num_column_opening() {
       return Err(SpartanError::InvalidPCS {
         reason: "Invalid number of column openings".to_string(),
       });
     }
 
-    for (i, &column) in arg.columns.iter().enumerate() {
+    for (i, &column) in arg.columns_idx.iter().enumerate() {
       if column >= codeword_len {
         return Err(SpartanError::InvalidPCS {
           reason: "Invalid column index".to_string(),
@@ -624,7 +640,7 @@ where
 
     // Finally verify the evaluation itself
     let final_combined_row = &arg.combined_rows[num_proximity];
-    if inner_product(final_combined_row, &t_1) != eval {
+    if inner_product(final_combined_row, &q_2) != eval {
       return Err(SpartanError::InvalidPCS {
         reason: "Consistency failure for final evaluation".to_string(),
       });
@@ -639,9 +655,9 @@ fn point_to_tensor<F: PrimeField>(num_rows: usize, point: &[F]) -> (Vec<F>, Vec<
   assert!(num_rows.is_power_of_two());
   let num_vars_rows = num_rows.ilog2() as usize;
   let (rows_pt, cols_pt) = point.split_at(num_vars_rows);
-  let t_0 = EqPolynomial::new(rows_pt.to_vec()).evals();
-  let t_1 = EqPolynomial::new(cols_pt.to_vec()).evals();
-  (t_0, t_1)
+  let q_1 = EqPolynomial::new(rows_pt.to_vec()).evals();
+  let q_2 = EqPolynomial::new(cols_pt.to_vec()).evals();
+  (q_1, q_2)
 }
 
 fn squeeze_challenge_idx<E: Engine>(transcript: &mut E::TE, cap: usize) -> usize {
@@ -704,10 +720,12 @@ mod tests {
     let comm = PCS::commit(&ck, &poly, &blind, false).unwrap();
 
     let mut transcript_p = <E as Engine>::TE::new(b"test");
+
+    // Create comm_eval with the evaluation value (mimicking Spartan's usage)
     let comm_eval = MultilinearBrakedownCommitment {
       root: vec![],
       rows: Some(vec![eval]),
-      intermediate_hashes: Some(vec![]),
+      intermediate_hashes: None,
       _p: PhantomData,
     };
     let blind_eval = PCS::blind(&ck, 1);
