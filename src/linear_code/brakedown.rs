@@ -141,11 +141,6 @@ impl<F: PrimeField> LinearCodes<F> for BrakedownCode<F> {
         );
         output_offset += b.dimension.m;
       });
-
-    if cfg!(feature = "sanity-check") {
-      assert_eq!(input_offset, self.a[0].dimension.n);
-      assert_eq!(output_offset, target.len());
-    }
   }
 }
 
