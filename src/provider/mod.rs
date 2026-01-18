@@ -16,10 +16,12 @@ pub mod traits;
 mod msm;
 
 use crate::{
+  hash::Keccak256,
+  linear_code::brakedown::BrakedownCodeSpec6,
   provider::{
     keccak::Keccak256Transcript,
     pasta::{pallas, vesta},
-    pcs::hyrax_pc::HyraxPCS,
+    pcs::{brakedown::MultilinearBrakedown, hyrax_pc::HyraxPCS},
     pt256::{p256, t256},
   },
   traits::Engine,
@@ -42,6 +44,14 @@ pub struct P256HyraxEngine;
 /// An implementation of the Spartan Engine trait with T256 curve and Hyrax commitment scheme
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct T256HyraxEngine;
+
+/// An implementation of the Spartan Engine trait with Pallas curve and Brakedown commitment scheme
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PallasBrakedownEngine;
+
+/// An implementation of the Spartan Engine trait with Vesta curve and Brakedown commitment scheme
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct VestaBrakedownEngine;
 
 impl Engine for PallasHyraxEngine {
   type Base = pallas::Base;
@@ -73,4 +83,20 @@ impl Engine for T256HyraxEngine {
   type GE = t256::Point;
   type TE = Keccak256Transcript<Self>;
   type PCS = HyraxPCS<Self>;
+}
+
+impl Engine for PallasBrakedownEngine {
+  type Base = pallas::Base;
+  type Scalar = pallas::Scalar;
+  type GE = pallas::Point;
+  type TE = Keccak256Transcript<Self>;
+  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
+}
+
+impl Engine for VestaBrakedownEngine {
+  type Base = vesta::Base;
+  type Scalar = vesta::Scalar;
+  type GE = vesta::Point;
+  type TE = Keccak256Transcript<Self>;
+  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
 }
