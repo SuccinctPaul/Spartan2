@@ -333,9 +333,7 @@ where
     let expected_n = 1 << ck.num_vars;
     if n > expected_n {
       return Err(SpartanError::InvalidInputLength {
-        reason: format!(
-          "Brakedown prove: Expected at most {expected_n} elements in poly, got {n}"
-        ),
+        reason: format!("Brakedown prove: Expected at most {expected_n} elements in poly, got {n}"),
       });
     }
 
