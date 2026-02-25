@@ -91,19 +91,19 @@ impl Engine for T256HyraxEngine {
   type PCS = HyraxPCS<Self>;
 }
 impl Engine for PallasBrakedownEngine {
-    type Base = pallas::Base;
-    type Scalar = pallas::Scalar;
-    type GE = pallas::Point;
-    type TE = Keccak256Transcript<Self>;
-    type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
+  type Base = pallas::Base;
+  type Scalar = pallas::Scalar;
+  type GE = pallas::Point;
+  type TE = Keccak256Transcript<Self>;
+  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
 }
 
 impl Engine for VestaBrakedownEngine {
-    type Base = vesta::Base;
-    type Scalar = vesta::Scalar;
-    type GE = vesta::Point;
-    type TE = Keccak256Transcript<Self>;
-    type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
+  type Base = vesta::Base;
+  type Scalar = vesta::Scalar;
+  type GE = vesta::Point;
+  type TE = Keccak256Transcript<Self>;
+  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
 }
 
 impl Engine for Bn254Engine {
