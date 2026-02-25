@@ -190,10 +190,7 @@ where
     let expected_n = 1 << ck.num_vars;
     if n > expected_n {
       return Err(SpartanError::InvalidInputLength {
-        reason: format!(
-          "Brakedown commit: Expected at most {} elements, got {}",
-          expected_n, n
-        ),
+        reason: format!("Brakedown commit: Expected at most {expected_n} elements, got {n}"),
       });
     }
 
@@ -337,8 +334,7 @@ where
     if n > expected_n {
       return Err(SpartanError::InvalidInputLength {
         reason: format!(
-          "Brakedown prove: Expected at most {} elements in poly, got {}",
-          expected_n, n
+          "Brakedown prove: Expected at most {expected_n} elements in poly, got {n}"
         ),
       });
     }
@@ -607,7 +603,7 @@ where
         };
         if expected_item != encoded_combined_rows[t][column] {
           return Err(SpartanError::InvalidPCS {
-            reason: format!("Consistency failure for row {}", t),
+            reason: format!("Consistency failure for row {t}"),
           });
         }
       }
