@@ -27,7 +27,9 @@ use crate::{
   traits::Engine,
 };
 use core::fmt::Debug;
+use halo2curves::bn256::Bn256;
 use serde::{Deserialize, Serialize};
+use crate::provider::pcs::mkzg::MultilinearKzg;
 
 /// An implementation of the Spartan Engine trait with Pallas curve and Hyrax commitment scheme
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,6 +50,11 @@ pub struct T256HyraxEngine;
 /// An implementation of the Spartan Engine trait with BN254 curve and Hyrax commitment scheme
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Bn254Engine;
+
+/// Spartan Engine with BN256 curve and Multilinear KZG PCS.
+/// Only supports non-folding Spartan (SpartanSNARK); SpartanZK and folding paths require FoldingEngineTrait.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Bn256MkzgEngine;
 
 impl Engine for PallasHyraxEngine {
   type Base = pallas::Base;
@@ -87,4 +94,12 @@ impl Engine for Bn254Engine {
   type GE = bn254_types::Point;
   type TE = Keccak256Transcript<Self>;
   type PCS = HyraxPCS<Self>;
+}
+
+impl Engine for Bn256MkzgEngine {
+  type Base = <halo2curves::bn256::G1Affine as halo2curves::CurveAffine>::Base;
+  type Scalar = halo2curves::bn256::Fr;
+  type GE = halo2curves::bn256::G1;
+  type TE = Keccak256Transcript<Self>;
+  type PCS = MultilinearKzg<Bn256>;
 }
