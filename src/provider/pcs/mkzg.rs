@@ -265,7 +265,6 @@ where
 
   fn blind(_ck: &Self::CommitmentKey, _n: usize) -> Self::Blind {
     // MKZG doesn't use blinding
-    ()
   }
 
   fn commit(
@@ -287,6 +286,7 @@ where
       });
     }
 
+    #[allow(clippy::manual_repeat_n)]
     let v_m: Vec<M::Fr> = v
       .iter()
       .map(|s| (*s).into())

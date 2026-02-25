@@ -439,66 +439,6 @@ fn compute_ln(a: usize) -> usize {
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::provider::pasta::{pallas, vesta};
-  use ff::Field;
-  use halo2curves::{CurveAffine, group::Group};
-  use rand_core::OsRng;
-
-  fn test_general_msm_with<F: Field, A: CurveAffine<ScalarExt = F>>() {
-    let n = 8;
-    let coeffs = (0..n).map(|_| F::random(OsRng)).collect::<Vec<_>>();
-    let bases = (0..n)
-      .map(|_| A::from(A::generator() * F::random(OsRng)))
-      .collect::<Vec<_>>();
-
-    assert_eq!(coeffs.len(), bases.len());
-    let naive = coeffs
-      .iter()
-      .zip(bases.iter())
-      .fold(A::CurveExt::identity(), |acc, (coeff, base)| {
-        acc + *base * coeff
-      });
-    let msm = msm(&coeffs, &bases, true);
-
-    assert_eq!(naive, msm.unwrap())
-  }
-
-  #[test]
-  fn test_general_msm() {
-    test_general_msm_with::<pallas::Scalar, pallas::Affine>();
-    test_general_msm_with::<vesta::Scalar, vesta::Affine>();
-  }
-
-  fn test_msm_ux_with<F: PrimeField, A: CurveAffine<ScalarExt = F>>() {
-    let n = 8;
-    let bases = (0..n)
-      .map(|_| A::from(A::generator() * F::random(OsRng)))
-      .collect::<Vec<_>>();
-
-    for bit_width in [1, 4, 8, 10, 16, 20, 32, 40, 64] {
-      println!("bit_width: {bit_width}");
-      assert!(bit_width <= 64); // Ensure we don't overflow F::from
-      let coeffs: Vec<u64> = (0..n)
-        .map(|_| rand::random::<u64>() % (1 << bit_width))
-        .collect::<Vec<_>>();
-      let coeffs_scalar: Vec<F> = coeffs.iter().map(|b| F::from(*b)).collect::<Vec<_>>();
-      let general = msm(&coeffs_scalar, &bases, true);
-      let integer = msm_small(&coeffs, &bases, true);
-
-      assert_eq!(general.unwrap(), integer.unwrap());
-    }
-  }
-
-  #[test]
-  fn test_msm_ux() {
-    test_msm_ux_with::<pallas::Scalar, pallas::Affine>();
-    test_msm_ux_with::<vesta::Scalar, vesta::Affine>();
-  }
-}
-
 use crate::utils::parallel::{num_threads, parallelize, parallelize_iter};
 use itertools::Itertools;
 use std::mem::size_of;
@@ -679,5 +619,65 @@ fn variable_base_msm_serial<C: CurveAffine>(
       running_sum = bucket.add(running_sum);
       *result += &running_sum;
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::provider::pasta::{pallas, vesta};
+  use ff::Field;
+  use halo2curves::{CurveAffine, group::Group};
+  use rand_core::OsRng;
+
+  fn test_general_msm_with<F: Field, A: CurveAffine<ScalarExt = F>>() {
+    let n = 8;
+    let coeffs = (0..n).map(|_| F::random(OsRng)).collect::<Vec<_>>();
+    let bases = (0..n)
+      .map(|_| A::from(A::generator() * F::random(OsRng)))
+      .collect::<Vec<_>>();
+
+    assert_eq!(coeffs.len(), bases.len());
+    let naive = coeffs
+      .iter()
+      .zip(bases.iter())
+      .fold(A::CurveExt::identity(), |acc, (coeff, base)| {
+        acc + *base * coeff
+      });
+    let msm = msm(&coeffs, &bases, true);
+
+    assert_eq!(naive, msm.unwrap())
+  }
+
+  #[test]
+  fn test_general_msm() {
+    test_general_msm_with::<pallas::Scalar, pallas::Affine>();
+    test_general_msm_with::<vesta::Scalar, vesta::Affine>();
+  }
+
+  fn test_msm_ux_with<F: PrimeField, A: CurveAffine<ScalarExt = F>>() {
+    let n = 8;
+    let bases = (0..n)
+      .map(|_| A::from(A::generator() * F::random(OsRng)))
+      .collect::<Vec<_>>();
+
+    for bit_width in [1, 4, 8, 10, 16, 20, 32, 40, 64] {
+      println!("bit_width: {bit_width}");
+      assert!(bit_width <= 64); // Ensure we don't overflow F::from
+      let coeffs: Vec<u64> = (0..n)
+        .map(|_| rand::random::<u64>() % (1 << bit_width))
+        .collect::<Vec<_>>();
+      let coeffs_scalar: Vec<F> = coeffs.iter().map(|b| F::from(*b)).collect::<Vec<_>>();
+      let general = msm(&coeffs_scalar, &bases, true);
+      let integer = msm_small(&coeffs, &bases, true);
+
+      assert_eq!(general.unwrap(), integer.unwrap());
+    }
+  }
+
+  #[test]
+  fn test_msm_ux() {
+    test_msm_ux_with::<pallas::Scalar, pallas::Affine>();
+    test_msm_ux_with::<vesta::Scalar, vesta::Affine>();
   }
 }

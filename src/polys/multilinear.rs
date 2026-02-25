@@ -46,14 +46,13 @@ impl<Scalar: PrimeField> MultilinearPolynomial<Scalar> {
 
   /// Number of variables in the polynomial.
   pub fn num_vars(&self) -> usize {
-    let num_vars = if self.Z.is_empty() {
+    if self.Z.is_empty() {
       0
     } else {
       let num_vars = self.Z.len().ilog2() as usize;
       assert_eq!(self.Z.len(), 1 << num_vars);
       num_vars
-    };
-    num_vars
+    }
   }
 
   pub fn evals(&self) -> &[Scalar] {

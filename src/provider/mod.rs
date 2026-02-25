@@ -21,7 +21,7 @@ use crate::{
     bn254::types as bn254_types,
     keccak::Keccak256Transcript,
     pasta::{pallas, vesta},
-    pcs::hyrax_pc::HyraxPCS,
+    pcs::{hyrax_pc::HyraxPCS, mkzg::MultilinearKzg},
     pt256::{p256, t256},
   },
   traits::Engine,
@@ -29,7 +29,6 @@ use crate::{
 use core::fmt::Debug;
 use halo2curves::bn256::Bn256;
 use serde::{Deserialize, Serialize};
-use crate::provider::pcs::mkzg::MultilinearKzg;
 
 /// An implementation of the Spartan Engine trait with Pallas curve and Hyrax commitment scheme
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
