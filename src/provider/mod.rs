@@ -7,6 +7,7 @@
 //! This module implements Spartan's traits using the following several different combinations
 
 // public modules to be used as an commitment engine with Spartan
+pub mod bn254;
 pub mod keccak;
 pub mod pasta;
 pub mod pcs;
@@ -19,6 +20,7 @@ use crate::{
   hash::Keccak256,
   linear_code::brakedown::BrakedownCodeSpec6,
   provider::{
+    bn254::types as bn254_types,
     keccak::Keccak256Transcript,
     pasta::{pallas, vesta},
     pcs::{brakedown::MultilinearBrakedown, hyrax_pc::HyraxPCS},
@@ -53,6 +55,10 @@ pub struct PallasBrakedownEngine;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct VestaBrakedownEngine;
 
+/// An implementation of the Spartan Engine trait with BN254 curve and Hyrax commitment scheme
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Bn254Engine;
+
 impl Engine for PallasHyraxEngine {
   type Base = pallas::Base;
   type Scalar = pallas::Scalar;
@@ -84,19 +90,26 @@ impl Engine for T256HyraxEngine {
   type TE = Keccak256Transcript<Self>;
   type PCS = HyraxPCS<Self>;
 }
-
 impl Engine for PallasBrakedownEngine {
-  type Base = pallas::Base;
-  type Scalar = pallas::Scalar;
-  type GE = pallas::Point;
-  type TE = Keccak256Transcript<Self>;
-  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
+    type Base = pallas::Base;
+    type Scalar = pallas::Scalar;
+    type GE = pallas::Point;
+    type TE = Keccak256Transcript<Self>;
+    type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
 }
 
 impl Engine for VestaBrakedownEngine {
-  type Base = vesta::Base;
-  type Scalar = vesta::Scalar;
-  type GE = vesta::Point;
+    type Base = vesta::Base;
+    type Scalar = vesta::Scalar;
+    type GE = vesta::Point;
+    type TE = Keccak256Transcript<Self>;
+    type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
+}
+
+impl Engine for Bn254Engine {
+  type Base = bn254_types::Base;
+  type Scalar = bn254_types::Scalar;
+  type GE = bn254_types::Point;
   type TE = Keccak256Transcript<Self>;
-  type PCS = MultilinearBrakedown<Self, Keccak256, BrakedownCodeSpec6>;
+  type PCS = HyraxPCS<Self>;
 }

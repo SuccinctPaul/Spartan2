@@ -12,7 +12,7 @@
   unused,
   future_incompatible,
   nonstandard_style,
-  // rust_2018_idioms,
+  rust_2018_idioms,
   missing_docs
 )]
 #![allow(non_snake_case)]
@@ -25,9 +25,7 @@
 mod digest;
 mod math;
 mod nifs;
-mod polys;
 mod r1cs;
-mod sumcheck;
 mod zk;
 
 #[macro_use]
@@ -39,13 +37,17 @@ pub mod errors;
 pub mod provider;
 pub mod traits;
 
-// public modules for different proof systems
+// internal modules
+mod big_num;
+mod polys;
+mod sumcheck;
+
+// public modules for proof systems
 mod hash;
 mod linear_code;
 pub mod neutronnova_zk; // NeutronNova with zero-knowledge
 pub mod spartan; // Spartan without zero-knowledge
-pub mod spartan_zk;
-// Spartan with zero-knowledge
+pub mod spartan_zk; // Spartan with zero-knowledge
 
 /// Start a span + timer, return `(Span, Instant)`.
 macro_rules! start_span {
