@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 /// 4 k elements is a good cut-off on a 16-core machine.
-const PAR_THRESHOLD: usize = 4 << 10; // 4096
+pub(crate) const PAR_THRESHOLD: usize = 4 << 10; // 4096
 
 /// Adaptive parallel-for helper.
 /// Falls back to a plain `for` loop when the slice is small **or**
@@ -203,7 +203,7 @@ impl<E: Engine> SumcheckProof<E> {
   /// * `claim` - The claimed sum over the hypercube
   /// * `num_rounds` - The number of variables/rounds in the sum-check
   /// * `poly_A` - First multilinear polynomial (mutable, will be bound during protocol)
-  /// * `poly_B` - Second multilinear polynomial (mutable, will be bound during protocol)  
+  /// * `poly_B` - Second multilinear polynomial (mutable, will be bound during protocol)
   /// * `comb_func` - Function that combines evaluations of the two polynomials
   /// * `transcript` - The transcript for generating randomness
   ///
@@ -278,7 +278,7 @@ impl<E: Engine> SumcheckProof<E> {
   ///
   /// # Arguments
   /// * `poly_A` - First multilinear polynomial
-  /// * `poly_B` - Second multilinear polynomial  
+  /// * `poly_B` - Second multilinear polynomial
   /// * `poly_C` - Third multilinear polynomial
   /// * `poly_D` - Fourth multilinear polynomial
   /// * `comb_func` - Function that combines evaluations of the four polynomials
@@ -358,7 +358,7 @@ impl<E: Engine> SumcheckProof<E> {
   /// * `pow_tau_left` - The left part of the power of tau
   /// * `pow_tau_right` - The right part of the power of tau
   /// * `poly_A` - First multilinear polynomial
-  /// * `poly_B` - Second multilinear polynomial  
+  /// * `poly_B` - Second multilinear polynomial
   /// * `poly_C` - Third multilinear polynomial
   /// * `comb_func` - Function that combines evaluations of the four polynomials
   ///
@@ -458,6 +458,7 @@ impl<E: Engine> SumcheckProof<E> {
   }
 
   /// Prove poly_A * poly_B - poly_C using optimized equality polynomial handling
+  /// with delayed modular reduction for improved performance.
   pub fn prove_cubic_with_three_inputs(
     claim: &E::Scalar,
     taus: Vec<E::Scalar>,
@@ -867,9 +868,12 @@ impl<E: Engine> SumcheckProof<E> {
 pub(crate) mod eq_sumcheck {
   //! This module implements the sumcheck optimization for equality polynomials.
   //! The optimization is described in Section 5 of <https://eprint.iacr.org/2025/1117> algorithm 5.
-  use crate::{polys::multilinear::MultilinearPolynomial, traits::Engine};
+  use crate::{
+    big_num::DelayedReduction, polys::multilinear::MultilinearPolynomial, traits::Engine,
+  };
   use ff::{Field, PrimeField};
-  use rayon::{iter::ZipEq, prelude::*, slice::Iter};
+  use num_traits::Zero;
+  use rayon::prelude::*;
 
   pub struct EqSumCheckInstance<E: Engine> {
     // number of variables at first
@@ -965,60 +969,180 @@ pub(crate) mod eq_sumcheck {
     ) -> (E::Scalar, E::Scalar, E::Scalar) {
       debug_assert_eq!(poly_A.Z.len() % 2, 0);
 
-      let in_first_half = self.round < self.first_half;
+      type Acc<S> = <S as DelayedReduction<S>>::Accumulator;
 
+      let in_first_half = self.round < self.first_half;
       let half_p = poly_A.Z.len() / 2;
 
-      let [zip_A, zip_B, zip_C] = split_and_zip([&poly_A.Z, &poly_B.Z, &poly_C.Z], half_p);
-
       let (mut eval_0, mut eval_2, mut eval_3) = if in_first_half {
-        let (poly_eq_left, poly_eq_right, second_half, low_mask) = self.poly_eqs_first_half();
+        // Two-phase accumulation using split-eq factorization:
+        //   E[id] = E_out[x_out] × E_in[x_in]  where id = (x_out << k) | x_in
+        //
+        // We compute: Σ_id E[id] × q_k(A[id], B[id], C[id])
+        //           = Σ_{x_out} E_out[x_out] × (Σ_{x_in} E_in[x_in] × q_k(...))
+        //
+        // The inner sum over x_in is computed in a loop with delayed reduction,
+        // then reduced once before accumulating into the outer sum.
+        let (poly_eq_left, poly_eq_right, second_half) = self.poly_eqs_first_half();
+        let eq_out_len = poly_eq_left.len();
 
-        zip_A
-          .zip_eq(zip_B)
-          .zip_eq(zip_C)
-          .enumerate()
-          .map(|(id, ((a, b), c))| {
-            let (zero_a, one_a) = a;
-            let (zero_b, one_b) = b;
-            let (zero_c, one_c) = c;
+        // Outer loop: Σ_{x_out} E_out[x_out] × (inner sum)
+        let (acc_0, acc_2, acc_3) = (0..eq_out_len)
+          .into_par_iter()
+          .fold(
+            || {
+              (
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+              )
+            },
+            |mut outer_acc, x_out| {
+              let e_out = &poly_eq_left[x_out];
 
-            let (eval_0, eval_2, eval_3) = eval_one_case_cubic_three_inputs(
-              round_idx, zero_a, one_a, zero_b, one_b, zero_c, one_c,
-            );
+              // Inner loop: Σ_{x_in} E_in[x_in] × q_k(A, B, C)
+              // Accumulated in wide limbs without reduction.
+              let mut inner_0 = Acc::<E::Scalar>::zero();
+              let mut inner_2 = Acc::<E::Scalar>::zero();
+              let mut inner_3 = Acc::<E::Scalar>::zero();
 
-            let factor = poly_eq_left[id >> second_half] * poly_eq_right[id & low_mask];
+              for (x_in, e_in) in poly_eq_right.iter().enumerate() {
+                let id = (x_out << second_half) | x_in;
 
-            (eval_0 * factor, eval_2 * factor, eval_3 * factor)
-          })
-          .reduce(
-            || (E::Scalar::ZERO, E::Scalar::ZERO, E::Scalar::ZERO),
-            |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2),
+                let (zero_a, one_a) = (&poly_A.Z[id], &poly_A.Z[id + half_p]);
+                let (zero_b, one_b) = (&poly_B.Z[id], &poly_B.Z[id + half_p]);
+                let (zero_c, one_c) = (&poly_C.Z[id], &poly_C.Z[id + half_p]);
+
+                let (q0, q2, q3) = eval_one_case_cubic_three_inputs(
+                  round_idx, zero_a, one_a, zero_b, one_b, zero_c, one_c,
+                );
+
+                <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                  &mut inner_0,
+                  e_in,
+                  &q0,
+                );
+                <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                  &mut inner_2,
+                  e_in,
+                  &q2,
+                );
+                <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                  &mut inner_3,
+                  e_in,
+                  &q3,
+                );
+              }
+
+              // Reduce inner sums, then accumulate E_out × (reduced inner) into outer
+              let inner_0_red = <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&inner_0);
+              let inner_2_red = <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&inner_2);
+              let inner_3_red = <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&inner_3);
+
+              <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                &mut outer_acc.0,
+                e_out,
+                &inner_0_red,
+              );
+              <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                &mut outer_acc.1,
+                e_out,
+                &inner_2_red,
+              );
+              <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                &mut outer_acc.2,
+                e_out,
+                &inner_3_red,
+              );
+
+              outer_acc
+            },
           )
+          .reduce(
+            || {
+              (
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+              )
+            },
+            |mut a, b| {
+              a.0 += b.0;
+              a.1 += b.1;
+              a.2 += b.2;
+              a
+            },
+          );
+
+        // Final reduction
+        (
+          <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&acc_0),
+          <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&acc_2),
+          <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&acc_3),
+        )
       } else {
-        let poly_eq_right = self.poly_eq_right_last_half().par_iter();
+        // Second half of rounds: E_out is fully bound, only E_in remains.
+        // We compute: Σ_id E[id] × q_k(A[id], B[id], C[id])
+        let poly_eq_right = self.poly_eq_right_last_half();
 
-        zip_A
-          .zip_eq(zip_B)
-          .zip_eq(zip_C)
-          .zip_eq(poly_eq_right)
-          .map(|(((a, b), c), poly_eq_right)| {
-            let (zero_a, one_a) = a;
-            let (zero_b, one_b) = b;
-            let (zero_c, one_c) = c;
+        // Single loop: Σ_id E[id] × q_k(A, B, C)
+        // Accumulated in wide limbs without reduction.
+        let (acc_0, acc_2, acc_3) = (0..half_p)
+          .into_par_iter()
+          .fold(
+            || {
+              (
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+              )
+            },
+            |mut acc, id| {
+              let e = &poly_eq_right[id];
 
-            let (eval_0, eval_2, eval_3) = eval_one_case_cubic_three_inputs(
-              round_idx, zero_a, one_a, zero_b, one_b, zero_c, one_c,
-            );
+              let (zero_a, one_a) = (&poly_A.Z[id], &poly_A.Z[id + half_p]);
+              let (zero_b, one_b) = (&poly_B.Z[id], &poly_B.Z[id + half_p]);
+              let (zero_c, one_c) = (&poly_C.Z[id], &poly_C.Z[id + half_p]);
 
-            let factor = poly_eq_right;
+              let (q0, q2, q3) = eval_one_case_cubic_three_inputs(
+                round_idx, zero_a, one_a, zero_b, one_b, zero_c, one_c,
+              );
 
-            (eval_0 * factor, eval_2 * factor, eval_3 * factor)
-          })
-          .reduce(
-            || (E::Scalar::ZERO, E::Scalar::ZERO, E::Scalar::ZERO),
-            |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2),
+              <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                &mut acc.0, e, &q0,
+              );
+              <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                &mut acc.1, e, &q2,
+              );
+              <E::Scalar as DelayedReduction<E::Scalar>>::unreduced_multiply_accumulate(
+                &mut acc.2, e, &q3,
+              );
+
+              acc
+            },
           )
+          .reduce(
+            || {
+              (
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+                Acc::<E::Scalar>::zero(),
+              )
+            },
+            |mut a, b| {
+              a.0 += b.0;
+              a.1 += b.1;
+              a.2 += b.2;
+              a
+            },
+          );
+
+        // Final reduction
+        (
+          <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&acc_0),
+          <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&acc_2),
+          <E::Scalar as DelayedReduction<E::Scalar>>::reduce(&acc_3),
+        )
       };
 
       self.update_evals(&mut eval_0, &mut eval_2, &mut eval_3);
@@ -1050,7 +1174,7 @@ pub(crate) mod eq_sumcheck {
     }
 
     #[inline]
-    fn poly_eqs_first_half(&self) -> (&Vec<E::Scalar>, &Vec<E::Scalar>, usize, usize) {
+    fn poly_eqs_first_half(&self) -> (&Vec<E::Scalar>, &Vec<E::Scalar>, usize) {
       let second_half = self.second_half;
       // Safe indexing: This method is only called when in_first_half is true,
       // which means self.round < self.first_half. Therefore self.first_half - self.round > 0
@@ -1060,12 +1184,7 @@ pub(crate) mod eq_sumcheck {
 
       debug_assert_eq!(poly_eq_right.len(), 1 << second_half);
 
-      (
-        poly_eq_left,
-        poly_eq_right,
-        second_half,
-        (1 << second_half) - 1,
-      )
+      (poly_eq_left, poly_eq_right, second_half)
     }
 
     #[inline]
@@ -1075,32 +1194,6 @@ pub(crate) mod eq_sumcheck {
       // is init_num_vars (as we do init_num_vars rounds), so the index is always >= 0.
       &self.poly_eq_right[self.init_num_vars - self.round]
     }
-  }
-
-  /// Splits N slices in half and creates parallel zip iterators for each half.
-  ///
-  /// Helper function that takes an array of slices, splits each at the midpoint,
-  /// and returns an array of parallel zip iterators over the left and right halves.
-  ///
-  /// # Type Parameters
-  /// * `N` - Number of slices to split and zip
-  /// * `T` - Element type (must be `Sync` for parallel iteration)
-  ///
-  /// # Arguments
-  /// * `vec` - Array of slices to split
-  /// * `half_size` - Size of each half (should equal `vec[i].len() / 2`)
-  ///
-  /// # Returns
-  /// Array of parallel zip iterators, one for each input slice.
-  #[inline]
-  fn split_and_zip<const N: usize, T: Sync>(
-    vec: [&[T]; N],
-    half_size: usize,
-  ) -> [ZipEq<Iter<'_, T>, Iter<'_, T>>; N] {
-    std::array::from_fn(|i| {
-      let (left, right) = vec[i].split_at(half_size);
-      left.par_iter().zip_eq(right.par_iter())
-    })
   }
 
   /// Evaluates a cubic polynomial at points 0, 2, and 3 for three-input case.
@@ -1162,5 +1255,93 @@ pub(crate) mod eq_sumcheck {
     };
 
     (eval_0, eval_2, eval_3)
+  }
+}
+
+#[cfg(test)]
+mod perf_tests {
+  use super::*;
+  use crate::{
+    big_num::DelayedReduction, polys::multilinear::MultilinearPolynomial, start_span,
+    traits::Engine,
+  };
+  use ff::Field;
+  use rand::{SeedableRng, rngs::StdRng};
+  use tracing::info;
+  use tracing_subscriber::EnvFilter;
+
+  // Test sizes: smaller for debug builds, full range for release
+  #[cfg(debug_assertions)]
+  const TEST_SIZES: &[usize] = &[16, 18];
+
+  #[cfg(not(debug_assertions))]
+  const TEST_SIZES: &[usize] = &[16, 18, 20, 22, 24];
+
+  fn test_first_round_spartan_sumcheck_with<E: Engine>()
+  where
+    E::Scalar: DelayedReduction<E::Scalar>,
+  {
+    const SEED: u64 = 0xDEADBEEF;
+    let field_name = std::any::type_name::<E::Scalar>()
+      .split("::")
+      .last()
+      .unwrap_or("unknown");
+
+    for &num_vars in TEST_SIZES {
+      let len = 1 << num_vars;
+      let mut rng = StdRng::seed_from_u64(SEED);
+
+      let az: Vec<E::Scalar> = (0..len).map(|_| E::Scalar::random(&mut rng)).collect();
+      let bz: Vec<E::Scalar> = (0..len).map(|_| E::Scalar::random(&mut rng)).collect();
+      let cz: Vec<E::Scalar> = (0..len).map(|_| E::Scalar::random(&mut rng)).collect();
+      let taus: Vec<E::Scalar> = (0..num_vars).map(|_| E::Scalar::random(&mut rng)).collect();
+
+      let mut poly_az = MultilinearPolynomial::new(az);
+      let mut poly_bz = MultilinearPolynomial::new(bz);
+      let mut poly_cz = MultilinearPolynomial::new(cz);
+      let mut transcript = E::TE::new(b"perf_test");
+
+      let (_span, t) = start_span!("sumcheck_prove", field = field_name, num_vars = num_vars);
+
+      let (proof, _r, _evals) = SumcheckProof::<E>::prove_cubic_with_three_inputs(
+        &E::Scalar::ZERO,
+        taus,
+        &mut poly_az,
+        &mut poly_bz,
+        &mut poly_cz,
+        &mut transcript,
+      )
+      .expect("proof generation should succeed");
+
+      info!(field = field_name, num_vars, n = len, ms = ?t.elapsed().as_millis(), "completed");
+
+      // Verify proof with fresh transcript
+      let mut verifier_transcript = E::TE::new(b"perf_test");
+      proof
+        .verify(E::Scalar::ZERO, num_vars, 3, &mut verifier_transcript)
+        .expect("proof verification should succeed");
+    }
+  }
+
+  #[test]
+  fn test_first_round_spartan_sumcheck() {
+    let _ = tracing_subscriber::fmt()
+      .with_target(false)
+      .with_ansi(true)
+      .with_env_filter(EnvFilter::from_default_env())
+      .try_init();
+
+    use crate::provider::Bn254Engine;
+
+    // Always test with BN254
+    test_first_round_spartan_sumcheck_with::<Bn254Engine>();
+
+    // Additional engines only in release builds
+    #[cfg(not(debug_assertions))]
+    {
+      use crate::provider::{PallasHyraxEngine, T256HyraxEngine};
+      test_first_round_spartan_sumcheck_with::<PallasHyraxEngine>();
+      test_first_round_spartan_sumcheck_with::<T256HyraxEngine>();
+    }
   }
 }
